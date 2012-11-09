@@ -1,5 +1,5 @@
 #include <msp430g2553.h>
-#include  "RTC.h"
+#include "RTC.h"
 
 const char string1[] = { "TTHello World " };
 unsigned int i;
@@ -29,14 +29,16 @@ void main ( void )
   TACCTL0 |= CCIE;                          // enable TA0CCRO interrupt
 
   // UART setup for LCD
-  P1SEL = 0x06;                 // select pin function: P1.1 = RXD, P1.2 = TXD
-  P1SEL2 = 0x06;                // select pin function: P1.1 = RXD, P1.2 = TXD
+  P1SEL = 0x04;                 // select pin function: P1.2 = TXD
+  P1SEL2 = 0x04;                // select pin function: P1.2 = TXD
+  //P1SEL = 0x06;                 // select pin function: P1.1 = RXD, P1.2 = TXD
+  //P1SEL2 = 0x06;                // select pin function: P1.1 = RXD, P1.2 = TXD
   UCA0CTL1 |= UCSSEL_1;                     // CLK = ACLK
   UCA0BR0 = 0x03;                           // 32kHz/9600 = 3.41
   UCA0BR1 = 0x00;                           //
   UCA0MCTL = UCBRS1 + UCBRS0;               // Modulation UCBRSx = 3
   UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
-  IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
+  //IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
 
   __bis_SR_register(GIE);                   // set global interrupt enable
 
@@ -84,6 +86,7 @@ __interrupt void USCI0TX_ISR(void)
     IE2 &= ~UCA0TXIE;                       // Disable USCI_A0 TX interrupt
 }
 
+/*
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR(void)
 {
@@ -94,4 +97,6 @@ __interrupt void USCI0RX_ISR(void)
     UCA0TXBUF = string1[i++];
   }
 }
+*/
+
 
