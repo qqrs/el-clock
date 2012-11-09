@@ -1,8 +1,16 @@
 #include <msp430g2553.h>
 #include "RTC.h"
 
-const char string1[] = { "TTHello World " };
+#define MAX_UART_BUF 32
+static char uart_tx_buf[MAX_UART_BUF];// = {'T','T','a','b','c','d','e','f',0};
+static const char *uart_tx_buf_end = &uart_tx_buf[MAX_UART_BUF];
+static char *uart_tx_buf_send = uart_tx_buf;
+static char *uart_tx_buf_load = uart_tx_buf;
+
+char string1[] = { "TTHello World " };
 unsigned int i;
+
+void uart_tx_str( char *src );
 
 void main ( void )
 {
@@ -63,6 +71,7 @@ __interrupt void Timer_A (void)
     __bic_SR_register_on_exit(LPM3_bits);
 }
 
+// Port 1 GPIO pushbutton interrupt
 #pragma vector=PORT1_VECTOR
 __interrupt void Port_1(void)
 {
@@ -70,20 +79,34 @@ __interrupt void Port_1(void)
     // TI_minute = 0x59;
     // TI_second = 0x58;
 
-    i = 0;
-    IE2 |= UCA0TXIE;                        // Enable USCI_A0 TX interrupt
-    UCA0TXBUF = string1[i++];
+    //i = 0;
+    uart_tx_str(string1);
+    IE2 |= UCA0TXIE;                    // Enable USCI_A0 TX interrupt
+    IFG2 |= UCA0TXIFG;                  // Trigger UART TXD interrupt to begin
+    //UCA0TXBUF = string1[i++];
 
-    P1IFG &= ~0x08;
+    P1IFG &= ~0x08;                         // clear Port 1 interrupt
 }
 
+// UART TXD interrupt
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR(void)
 {
-  UCA0TXBUF = string1[i++];                 // TX next character
+    UCA0TXBUF = *uart_tx_buf_send;              // send next character
+    uart_tx_buf_send++;
 
-  if (i == sizeof(string1))              // TX over?
-    IE2 &= ~UCA0TXIE;                       // Disable USCI_A0 TX interrupt
+    if (uart_tx_buf_send == uart_tx_buf_end) {  // end of buffer; wrap to front
+        uart_tx_buf_send = uart_tx_buf;
+    }
+
+    if (uart_tx_buf_send == uart_tx_buf_load) { // buffer is empty
+        IE2 &= ~UCA0TXIE;                       // disable USCI_A0 TX interrupt
+    }
+
+  //UCA0TXBUF = string1[i++];                 // TX next character
+
+  //if (i == sizeof(string1))              // TX over?
+    //IE2 &= ~UCA0TXIE;                       // Disable USCI_A0 TX interrupt
 }
 
 /*
@@ -98,5 +121,37 @@ __interrupt void USCI0RX_ISR(void)
   }
 }
 */
+
+// =============================================================================
+
+void uart_tx_str( char *src )
+{
+    while (1)
+    {
+        *uart_tx_buf_load = *src;
+
+        // check for buffer full condition
+        if (uart_tx_buf_load + 1 == uart_tx_buf_send
+                || (uart_tx_buf_load == uart_tx_buf_end - 1 
+                    && uart_tx_buf_send == uart_tx_buf) )
+        {
+            // TODO: wait here for buffer to empty?
+            break;
+        }
+
+        uart_tx_buf_load++;
+        if (uart_tx_buf_load == uart_tx_buf_end) {
+            uart_tx_buf_load = uart_tx_buf;
+        }
+
+        if (!*src) {        // copied terminating null
+            break;
+        }
+        src++;
+    }
+}
+
+
+
 
 
