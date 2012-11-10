@@ -1954,12 +1954,6 @@
     <name>$PROJ_DIR$\main.c</name>
   </file>
   <file>
-    <name>$PROJ_DIR$\pwm.c</name>
-    <excluded>
-      <configuration>Debug</configuration>
-    </excluded>
-  </file>
-  <file>
     <name>$PROJ_DIR$\RTC.s43</name>
   </file>
 </project>

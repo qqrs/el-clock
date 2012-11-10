@@ -37,7 +37,8 @@ void main ( void )
 {
     WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
 
-    setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
+    //setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
+    setTime( 0x01, 0x54, 0, 0);     // initialize time to 12:00:00 AM
 
     // TODO: set up unused pins to prevent floating inputs
     // TI datasheet recommends configuring as output (value does not matter) or
@@ -143,12 +144,14 @@ __interrupt void Timer_A1 (void)
 __interrupt void Port_1(void)
 {
     // P1OUT ^= 0x40;
-    TI_minute = 0x59;
-    TI_second = 0x58;
+    //TI_minute = 0x59;
+    //TI_second = 0x58;
 
-    if (uart_load_tx_str(string1) == RC_OK) {
-        uart_begin_tx();
-    }
+    //if (uart_load_tx_str(string1) == RC_OK) {
+    //    uart_begin_tx();
+    //}
+  
+    incrementMinutes();
     P1IFG &= ~0x08;                         // clear Port 1 interrupt
 }
 
