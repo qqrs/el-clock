@@ -118,23 +118,14 @@ void main ( void )
 __interrupt void Timer_A (void)
 {
     incrementSeconds();
-    //lcd_write_time();   // TODO: move this out of isr 
+    lcd_write_time();   // TODO: move this out of isr 
     __bic_SR_register_on_exit(LPM3_bits);
 }
-
-/*
-#pragma vector=TIMER0_A1_VECTOR
-__interrupt void Timer_A1 (void)
-{
-    P2OUT &= 0x01;
-}
-*/
 
 // Port 1 GPIO pushbutton interrupt
 #pragma vector=PORT1_VECTOR
 __interrupt void Port_1(void)
 {
-    // P1OUT ^= 0x40;
     //TI_minute = 0x59;
     //TI_second = 0x58;
 
@@ -156,10 +147,10 @@ __interrupt void Port_1(void)
 
 
 // Port 2 rotary encoder interrupt
+// TODO: make this a state machine to handle glitches and direction changes
 #pragma vector=PORT2_VECTOR
 __interrupt void Port_2(void)
 {
-    /*
     rotary_history = (rotary_history << 2)|((P2IN >> ENCODER_PINS_LSB) & 0x03);
 
     if ((rotary_history & 0x0F) == 0x0B) {
@@ -167,19 +158,13 @@ __interrupt void Port_2(void)
     } else if ((rotary_history & 0x0F) == 0x07 ) {
       rotary_count--;
     }
-    */
     
-    uart_load_tx_ch( ((P2IN >> (ENCODER_PINS_LSB+1)) & 0x01) + '0' );
-    uart_load_tx_ch( ((P2IN >> (ENCODER_PINS_LSB)) & 0x01) + '0' );
-    uart_load_tx_ch('\n');
-    uart_begin_tx();
-
     // no way to trigger on rise+fall so flip edge select to catch next change
     P2IES = (P2IN & ENCODER_PINS_MASK);      
     P2IFG &= ~ENCODER_PINS_MASK;        // clear interrupt
 }
 
-// TODO: configure UART ISR to clear LPM until done
+// TODO: need to configure UART ISR to clear LPM until done?
 // UART TXD interrupt
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR(void)
