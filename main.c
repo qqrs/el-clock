@@ -33,18 +33,25 @@ void main ( void )
     // as input with internal pullup/pulldown
 
     // GPIO pin setup
-    P1DIR = 0x41;                // set P1.0, 1.6 to output direction
-                               // note: UART pin dir set by USCI
+    P1DIR = 0x41;               // set P1.0, 1.6 to output direction
+                                // note: UART pin dir set by USCI
     P1OUT = 0x08;
-    P1REN = 0x08;                // set P1.3 pullup, interrupt enable, edge select
+    P1REN = 0x08;               // set P1.3 pullup, interrupt enable, edge select
     P1IE = 0x08;
     P1IES = 0x08;
-    P1IFG = 0x00;                // clear P1 interrupt flags
+    P1IFG = 0x00;               // clear P1 interrupt flags
+
+    P2DIR = 0x01;               // set P1.0 to output direction for speaker
 
     // TimerA setup for RTC
-    TACCR0 = 32768-1;
     TACTL = TASSEL_1+MC_1;                    // ACLK, upmode
+    TACCR0 = 32768-1;
     TACCTL0 |= CCIE;                          // enable TA0CCRO interrupt
+
+    // TimerA1 setup for speaker
+    TA1CTL = TASSEL_1+MC_1;                    // ACLK, upmode
+    TA1CCR0 = 40;                              // about 800 Hz audio tone
+    TA1CCTL0 |= CCIE;                          // enable TA0CCRO interrupt
 
     // UART setup for LCD
     P1SEL = 0x04;                 // select pin function: P1.2 = TXD
@@ -55,6 +62,9 @@ void main ( void )
     UCA0MCTL = UCBRS1 + UCBRS0;               // Modulation UCBRSx = 3
     UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
 
+    // Disable LCD cursor
+    uart_load_tx_ch('C');
+    uart_load_tx_ch('S');
     uart_load_tx_ch('\0');
     uart_begin_tx();
 
@@ -81,6 +91,12 @@ __interrupt void Timer_A (void)
     incrementSeconds();
     lcd_write_time();   // TODO: move this out of isr 
     __bic_SR_register_on_exit(LPM3_bits);
+}
+
+#pragma vector=TIMER0_A1_VECTOR
+__interrupt void Timer_A1 (void)
+{
+    P2OUT &= 0x01;
 }
 
 // Port 1 GPIO pushbutton interrupt
