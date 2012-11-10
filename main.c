@@ -18,6 +18,15 @@ const char *string2 = "TTA123456789B123456789C123456789D123456789";
 #define RC_FAIL -1
 #define RC_OK 0
 
+static uint8_t rotary_history;
+static int16_t rotary_count;
+
+// rotary encoder pins on Port 2
+#define ENCODER_PINS_MASK 0x18
+// assume MSB = LSB + 1
+#define ENCODER_PINS_LSB 3
+
+
 // =============================================================================
 
 static void inline uart_begin_tx( void );
@@ -32,8 +41,7 @@ void main ( void )
 {
     WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
 
-    //setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
-    setTime( 0x01, 0x54, 0, 0);     // initialize time to 12:00:00 AM
+    setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
 
     // TODO: set up unused pins to prevent floating inputs
     // TI datasheet recommends configuring as output (value does not matter) or
@@ -46,11 +54,16 @@ void main ( void )
     P1REN = 0x18;               // set P1.3, 1.4 pullup
     P1OUT = 0x18;               // set P1.3, 1.4 pullup
     P1IE  = 0x18;               // set P1.3, 1.4 interrupt enable
-    P1IES = 0x18;               // set P1.3, 1.4 edge select
+    P1IES = 0x18;               // set P1.3, 1.4 edge select falling edge
     P1IFG = 0x00;               // clear P1 interrupt flags
 
-    //P2DIR = 0x00;       // set P1.0, P1.2 to output direction for speaker
+    //P2DIR = 0x04;       // all inputs -- outputs turned on below as needed
     //P2SEL = 0x00;       // special functions off -- turned on below as needed
+    P2REN = ENCODER_PINS_MASK;  // set encoder pins pullup
+    P2OUT = ENCODER_PINS_MASK;  // set encoder pins pullup
+    P2IE  = ENCODER_PINS_MASK;  // set encoder pins interrupt enable
+    P2IES = ENCODER_PINS_MASK;  // set encoder pins edge select falling edge
+    P2IFG = 0x00;               // clear P2 interrupt flags
 
     // TimerA0 setup for RTC
     TACTL = TASSEL_1 | MC_1;                    // ACLK, upmode
@@ -62,7 +75,7 @@ void main ( void )
     TA1CTL   = TASSEL_1 | MC_1;     // ACLK, upmode
     TA1CCR0  = (32768 / 1200) - 1;  // TA1CCR1 toggle period, for ~600 Hz tone
     P2DIR   |= BIT2;                // P2.2 = output
-    //P2SEL   |= BIT2;                // P2.2 = PWM output controlled by TA1.1
+    P2SEL   |= BIT2;                // P2.2 = PWM output controlled by TA1.1
 
     // UART setup for LCD
     P1SEL |= BIT2;                          // select pin function: P1.2 = TXD
@@ -72,6 +85,10 @@ void main ( void )
     UCA0BR1 = 0x00;                         //
     UCA0MCTL = UCBRS1 + UCBRS0;             // Modulation UCBRSx = 3
     UCA0CTL1 &= ~UCSWRST;                   // Initialize USCI state machine
+
+    // Reset rotary encoder
+    rotary_history = 0x00;
+    rotary_count = 0;
 
     // Disable LCD cursor
     uart_load_tx_ch('C');
@@ -89,7 +106,7 @@ void main ( void )
         if (TI_second != 0) {
             P1OUT ^= 0x40;
         }
-        //P2SEL ^= BIT2;               // toggle PWM for speaker beep
+        P2SEL ^= BIT2;               // toggle PWM for speaker beep
         //lcd_write_time();
         __no_operation();      // set breakpoint here to see 1 second interrupt
     }
@@ -101,7 +118,7 @@ void main ( void )
 __interrupt void Timer_A (void)
 {
     incrementSeconds();
-    lcd_write_time();   // TODO: move this out of isr 
+    //lcd_write_time();   // TODO: move this out of isr 
     __bic_SR_register_on_exit(LPM3_bits);
 }
 
@@ -135,6 +152,31 @@ __interrupt void Port_1(void)
         P1IFG = 0x00;                   // should never happen
     }
 
+}
+
+
+// Port 2 rotary encoder interrupt
+#pragma vector=PORT2_VECTOR
+__interrupt void Port_2(void)
+{
+    /*
+    rotary_history = (rotary_history << 2)|((P2IN >> ENCODER_PINS_LSB) & 0x03);
+
+    if ((rotary_history & 0x0F) == 0x0B) {
+      rotary_count++;
+    } else if ((rotary_history & 0x0F) == 0x07 ) {
+      rotary_count--;
+    }
+    */
+    
+    uart_load_tx_ch( ((P2IN >> (ENCODER_PINS_LSB+1)) & 0x01) + '0' );
+    uart_load_tx_ch( ((P2IN >> (ENCODER_PINS_LSB)) & 0x01) + '0' );
+    uart_load_tx_ch('\n');
+    uart_begin_tx();
+
+    // no way to trigger on rise+fall so flip edge select to catch next change
+    P2IES = (P2IN & ENCODER_PINS_MASK);      
+    P2IFG &= ~ENCODER_PINS_MASK;        // clear interrupt
 }
 
 // TODO: configure UART ISR to clear LPM until done
@@ -209,6 +251,8 @@ static void inline uart_begin_tx( void )
 
 static void lcd_write_time( void )
 {
+    uint16_t cnt;
+
     uart_load_tx_ch('C');
     uart_load_tx_ch('L');
     uart_load_tx_ch('T');
@@ -228,6 +272,19 @@ static void lcd_write_time( void )
     } else {
         uart_load_tx_ch('A');
     }
+
+    uart_load_tx_ch(' ');
+    uart_load_tx_ch(' ');
+    if (rotary_count < 0) {
+        uart_load_tx_ch('-');
+        cnt = -rotary_count;
+    } else {
+        uart_load_tx_ch('+');
+        cnt = rotary_count;
+    }
+    uart_load_tx_ch( itoc( (cnt/10)%10 ) );
+    uart_load_tx_ch( itoc( (cnt)%10 ) );
+
 
     uart_load_tx_ch('\0');
     uart_begin_tx();
