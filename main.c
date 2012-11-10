@@ -1,16 +1,24 @@
+#include <stdint.h>
+
 #include <msp430g2553.h>
 #include "RTC.h"
 
 #define MAX_UART_BUF 32
-static char uart_tx_buf[MAX_UART_BUF];// = {'T','T','a','b','c','d','e','f',0};
+static char uart_tx_buf[MAX_UART_BUF];
 static const char *uart_tx_buf_end = &uart_tx_buf[MAX_UART_BUF];
 static char *uart_tx_buf_send = uart_tx_buf;
 static char *uart_tx_buf_load = uart_tx_buf;
 
-char string1[] = { "TTHello World " };
-unsigned int i;
+const char *string1 = "TTHello World ";
+const char *string2 = "TTA123456789B123456789C123456789D123456789";
 
-void uart_tx_str( char *src );
+static void inline uart_begin_tx( void );
+static int16_t uart_load_tx_str( const char *src );
+static int16_t uart_load_tx_ch( const char ch );
+
+// return codes
+#define RC_FAIL -1
+#define RC_OK 0
 
 void main ( void )
 {
@@ -63,6 +71,7 @@ void main ( void )
   }
 }
 
+// =============================================================================
 
 #pragma vector=TIMER0_A0_VECTOR
 __interrupt void Timer_A (void)
@@ -79,11 +88,11 @@ __interrupt void Port_1(void)
     // TI_minute = 0x59;
     // TI_second = 0x58;
 
-    //i = 0;
-    uart_tx_str(string1);
-    IE2 |= UCA0TXIE;                    // Enable USCI_A0 TX interrupt
-    IFG2 |= UCA0TXIFG;                  // Trigger UART TXD interrupt to begin
-    //UCA0TXBUF = string1[i++];
+    if (uart_load_tx_str(string1) == RC_OK) {
+        uart_begin_tx();
+    }
+    // IE2 |= UCA0TXIE;                    // Enable USCI_A0 TX interrupt
+    // IFG2 |= UCA0TXIFG;                  // Trigger UART TXD interrupt to begin
 
     P1IFG &= ~0x08;                         // clear Port 1 interrupt
 }
@@ -95,18 +104,13 @@ __interrupt void USCI0TX_ISR(void)
     UCA0TXBUF = *uart_tx_buf_send;              // send next character
     uart_tx_buf_send++;
 
-    if (uart_tx_buf_send == uart_tx_buf_end) {  // end of buffer; wrap to front
-        uart_tx_buf_send = uart_tx_buf;
+    if (uart_tx_buf_send == uart_tx_buf_end) {  
+        uart_tx_buf_send = uart_tx_buf;         // end of buffer; wrap to front
     }
 
     if (uart_tx_buf_send == uart_tx_buf_load) { // buffer is empty
         IE2 &= ~UCA0TXIE;                       // disable USCI_A0 TX interrupt
     }
-
-  //UCA0TXBUF = string1[i++];                 // TX next character
-
-  //if (i == sizeof(string1))              // TX over?
-    //IE2 &= ~UCA0TXIE;                       // Disable USCI_A0 TX interrupt
 }
 
 /*
@@ -115,43 +119,84 @@ __interrupt void USCI0RX_ISR(void)
 {
   if (UCA0RXBUF == 'u')                     // 'u' received?
   {
-    i = 0;
-    IE2 |= UCA0TXIE;                        // Enable USCI_A0 TX interrupt
-    UCA0TXBUF = string1[i++];
   }
 }
 */
 
 // =============================================================================
 
-void uart_tx_str( char *src )
+// returns 0 for success
+static int16_t uart_load_tx_ch( const char ch )
+{
+    // check for buffer full condition
+    if (uart_tx_buf_load + 1 == uart_tx_buf_send
+            || (uart_tx_buf_load == uart_tx_buf_end - 1 
+                && uart_tx_buf_send == uart_tx_buf) )
+    {
+        return RC_FAIL;
+    }
+
+    *uart_tx_buf_load = ch;
+    uart_tx_buf_load++;
+    if (uart_tx_buf_load == uart_tx_buf_end) {
+        uart_tx_buf_load = uart_tx_buf;     // end of buffer; wrap to front
+    }
+    return RC_OK;
+
+}
+
+// return RC_FAIL if no characters loaded due to full buffer; RC_OK otherwise
+static int16_t uart_load_tx_str( const char *src )
+{
+    int16_t ret = RC_FAIL;
+    while (1)
+    {
+        if (uart_load_tx_ch( *src ) != RC_OK) {
+            break;
+        }
+        ret = RC_OK;
+
+        if (!*src) {        // finished copying -- copied terminating null 
+            break;
+        }
+        src++;
+    }
+    return ret;
+}
+
+static void inline uart_begin_tx( void ) 
+{
+    IE2 |= UCA0TXIE;                    // Enable USCI_A0 TX interrupt
+    IFG2 |= UCA0TXIFG;                  // Trigger UART TXD interrupt to begin
+}
+
+/*
+static void uart_load_tx_str( const char *src )
 {
     while (1)
     {
-        *uart_tx_buf_load = *src;
-
         // check for buffer full condition
         if (uart_tx_buf_load + 1 == uart_tx_buf_send
                 || (uart_tx_buf_load == uart_tx_buf_end - 1 
                     && uart_tx_buf_send == uart_tx_buf) )
         {
-            // TODO: wait here for buffer to empty?
+            // string load aborted if buffer is full
             break;
         }
 
+        *uart_tx_buf_load = *src;
+
         uart_tx_buf_load++;
         if (uart_tx_buf_load == uart_tx_buf_end) {
-            uart_tx_buf_load = uart_tx_buf;
+            uart_tx_buf_load = uart_tx_buf;     // end of buffer; wrap to front
         }
 
-        if (!*src) {        // copied terminating null
+        if (!*src) {        // copied terminating null -- finished copying
             break;
         }
         src++;
     }
 }
-
-
-
+*/
 
 
