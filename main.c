@@ -16,6 +16,8 @@ static void inline uart_begin_tx( void );
 static int16_t uart_load_tx_str( const char *src );
 static int16_t uart_load_tx_ch( const char ch );
 
+static void lcd_write_time( void );
+
 // return codes
 #define RC_FAIL -1
 #define RC_OK 0
@@ -67,6 +69,8 @@ void main ( void )
     if (TI_second == 0) {
       P1OUT ^= 0x40;
     }
+    //lcd_write_time();
+    //while (uart_tx_buf_send != uart_tx_buf_load) {}
     __no_operation();                       // set breakpoint here to see 1 second interrupt
   }
 }
@@ -77,6 +81,7 @@ void main ( void )
 __interrupt void Timer_A (void)
 {
     incrementSeconds();
+    lcd_write_time();   // TODO: move this out of isr 
     __bic_SR_register_on_exit(LPM3_bits);
 }
 
@@ -85,18 +90,16 @@ __interrupt void Timer_A (void)
 __interrupt void Port_1(void)
 {
     // P1OUT ^= 0x40;
-    // TI_minute = 0x59;
-    // TI_second = 0x58;
+    TI_minute = 0x59;
+    TI_second = 0x58;
 
-    if (uart_load_tx_str(string1) == RC_OK) {
-        uart_begin_tx();
-    }
-    // IE2 |= UCA0TXIE;                    // Enable USCI_A0 TX interrupt
-    // IFG2 |= UCA0TXIFG;                  // Trigger UART TXD interrupt to begin
-
+    //if (uart_load_tx_str(string1) == RC_OK) {
+        //uart_begin_tx();
+    //}
     P1IFG &= ~0x08;                         // clear Port 1 interrupt
 }
 
+// TODO: configure UART ISR to clear LPM until done
 // UART TXD interrupt
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR(void)
@@ -125,7 +128,8 @@ __interrupt void USCI0RX_ISR(void)
 
 // =============================================================================
 
-// returns 0 for success
+
+// return RC_FAIL if  not loaded due to full buffer; RC_OK otherwise
 static int16_t uart_load_tx_ch( const char ch )
 {
     // check for buffer full condition
@@ -170,33 +174,38 @@ static void inline uart_begin_tx( void )
     IFG2 |= UCA0TXIFG;                  // Trigger UART TXD interrupt to begin
 }
 
-/*
-static void uart_load_tx_str( const char *src )
+// =============================================================================
+
+#define itoc(val) ((val) + '0')         // convert int to char
+
+static void lcd_write_time( void )
 {
-    while (1)
-    {
-        // check for buffer full condition
-        if (uart_tx_buf_load + 1 == uart_tx_buf_send
-                || (uart_tx_buf_load == uart_tx_buf_end - 1 
-                    && uart_tx_buf_send == uart_tx_buf) )
-        {
-            // string load aborted if buffer is full
-            break;
-        }
+    uart_load_tx_ch('C');
+    uart_load_tx_ch('L');
+    uart_load_tx_ch('T');
+    uart_load_tx_ch('T');
+    uart_load_tx_ch( itoc(TI_hour >> 4) );
+    uart_load_tx_ch( itoc(TI_hour & 0x0F) );
+    uart_load_tx_ch(':');
+    uart_load_tx_ch( itoc(TI_minute >> 4) );
+    uart_load_tx_ch( itoc(TI_minute & 0x0F) );
+    uart_load_tx_ch(':');
+    uart_load_tx_ch( itoc(TI_second >> 4) );
+    uart_load_tx_ch( itoc(TI_second & 0x0F) );
+    uart_load_tx_ch(' ');
 
-        *uart_tx_buf_load = *src;
-
-        uart_tx_buf_load++;
-        if (uart_tx_buf_load == uart_tx_buf_end) {
-            uart_tx_buf_load = uart_tx_buf;     // end of buffer; wrap to front
-        }
-
-        if (!*src) {        // copied terminating null -- finished copying
-            break;
-        }
-        src++;
+    if (TI_PM) {
+        uart_load_tx_ch('P');
+    } else {
+        uart_load_tx_ch('A');
     }
+
+    uart_load_tx_ch('\0');
+    uart_begin_tx();
 }
-*/
+
+
+
+
 
 
