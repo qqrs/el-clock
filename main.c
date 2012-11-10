@@ -3,6 +3,8 @@
 #include <msp430g2553.h>
 #include "RTC.h"
 
+// =============================================================================
+
 #define MAX_UART_BUF 32
 static char uart_tx_buf[MAX_UART_BUF];
 static const char *uart_tx_buf_end = &uart_tx_buf[MAX_UART_BUF];
@@ -12,15 +14,24 @@ static char *uart_tx_buf_load = uart_tx_buf;
 const char *string1 = "TTHello World ";
 const char *string2 = "TTA123456789B123456789C123456789D123456789";
 
+#define MCU_CLOCK           32768
+#define PWM_FREQUENCY       1200     // In Hertz, ideally 50Hz.
+unsigned int PWM_Period     = (MCU_CLOCK / PWM_FREQUENCY);  // PWM Period
+unsigned int PWM_Duty       = (MCU_CLOCK / PWM_FREQUENCY) / 2;
+
+// return codes
+#define RC_FAIL -1
+#define RC_OK 0
+
+// =============================================================================
+
 static void inline uart_begin_tx( void );
 static int16_t uart_load_tx_str( const char *src );
 static int16_t uart_load_tx_ch( const char ch );
 
 static void lcd_write_time( void );
 
-// return codes
-#define RC_FAIL -1
-#define RC_OK 0
+// =============================================================================
 
 void main ( void )
 {
@@ -35,27 +46,52 @@ void main ( void )
     // GPIO pin setup
     P1DIR = 0x41;               // set P1.0, 1.6 to output direction
                                 // note: UART pin dir set by USCI
+    P1SEL = 0x00;               // special functions turned on below as needed
     P1OUT = 0x08;
     P1REN = 0x08;               // set P1.3 pullup, interrupt enable, edge select
     P1IE = 0x08;
     P1IES = 0x08;
     P1IFG = 0x00;               // clear P1 interrupt flags
 
-    P2DIR = 0x01;               // set P1.0 to output direction for speaker
+    //P2DIR = 0x00;               // set P1.0, P1.2 to output direction for speaker
+    //P2SEL = 0x00;               // special functions turned on below as needed
 
     // TimerA setup for RTC
-    TACTL = TASSEL_1+MC_1;                    // ACLK, upmode
+    TACTL = TASSEL_1 | MC_1;                    // ACLK, upmode
     TACCR0 = 32768-1;
     TACCTL0 |= CCIE;                          // enable TA0CCRO interrupt
 
     // TimerA1 setup for speaker
-    TA1CTL = TASSEL_1+MC_1;                    // ACLK, upmode
-    TA1CCR0 = 40;                              // about 800 Hz audio tone
-    TA1CCTL0 |= CCIE;                          // enable TA0CCRO interrupt
+    //TA1CTL = TASSEL_1+MC_1;                    // ACLK, upmode
+    //TA1CCR0 = 40;                              // about 800 Hz audio tone
+    //TA1CCTL0 |= CCIE;                          // enable TA0CCRO interrupt
+    
+    // TimerA1 setup for speaker PWM
+    //TA1CTL = MC_1 | TASSEL_1;           // Reset TA1R, set up mode, TA1 runs from 32768Hz ACLK
+    //TA1CCR0 = 40;                               // Set PWM frequency
+    //TA1CCTL0 = OUTMOD_4;                        // Enable IRQ, set output mode "toggle"
+    //P2SEL |= BIT0;                              // PWM output on P2.0 for speaker
+    //TA1CCTL0 |= CCIE;                           // enable TA0CCR1 interrupt
+                                                // Activate Timer0_A3 periodic interrupts
+    // TimerA1 setup for speaker PWM
+    //TACCTL1 = OUTMOD_7; // TACCR1 reset/set
+    //TACTL = TASSEL_2 + MC_1; // SMCLK, upmode
+    //TACCR0 = PWM_Period-1; // PWM Period
+    //TACCR1 = PWM_Duty; // TACCR1 PWM Duty Cycle
+    //P1DIR |= BIT2; // P1.2 = output
+    //P1SEL |= BIT2; // P1.2 = TA1 output
+
+    // TimerA1 setup for speaker PWM
+    TA1CCTL1 = OUTMOD_4;            // TA1CCR1 toggle
+    TA1CTL   = TASSEL_1 | MC_1;     // ACLK, upmode
+    TA1CCR0  = PWM_Period-1;        // TA1CCR1 PWM Period
+    TA1CCR1  = PWM_Duty;            // TA1CCR1 PWM Duty Cycle
+    P2DIR   |= BIT2;               // P2.2 = output
+    P2SEL   |= BIT2;               // P2.2 = TA1.1 output
 
     // UART setup for LCD
-    P1SEL = 0x04;                 // select pin function: P1.2 = TXD
-    P1SEL2 = 0x04;                // select pin function: P1.2 = TXD
+    P1SEL |= BIT2;                            // select pin function: P1.2 = TXD
+    P1SEL2 |= BIT2;                           // select pin function: P1.2 = TXD
     UCA0CTL1 |= UCSSEL_1;                     // CLK = ACLK
     UCA0BR0 = 0x03;                           // 32kHz/9600 = 3.41
     UCA0BR1 = 0x00;                           //
@@ -78,6 +114,7 @@ void main ( void )
         if (TI_second != 0) {
             P1OUT ^= 0x40;
         }
+        P2SEL ^= BIT2;               // toggle PWM for speaker beep
         //lcd_write_time();
         __no_operation();                       // set breakpoint here to see 1 second interrupt
     }
@@ -93,11 +130,13 @@ __interrupt void Timer_A (void)
     __bic_SR_register_on_exit(LPM3_bits);
 }
 
+/*
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void Timer_A1 (void)
 {
     P2OUT &= 0x01;
 }
+*/
 
 // Port 1 GPIO pushbutton interrupt
 #pragma vector=PORT1_VECTOR
@@ -217,7 +256,6 @@ static void lcd_write_time( void )
     uart_load_tx_ch('\0');
     uart_begin_tx();
 }
-
 
 
 
