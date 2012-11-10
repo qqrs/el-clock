@@ -14,11 +14,6 @@ static char *uart_tx_buf_load = uart_tx_buf;
 const char *string1 = "TTHello World ";
 const char *string2 = "TTA123456789B123456789C123456789D123456789";
 
-#define MCU_CLOCK           32768
-#define PWM_FREQUENCY       1200     // In Hertz, ideally 50Hz.
-unsigned int PWM_Period     = (MCU_CLOCK / PWM_FREQUENCY);  // PWM Period
-unsigned int PWM_Duty       = (MCU_CLOCK / PWM_FREQUENCY) / 2;
-
 // return codes
 #define RC_FAIL -1
 #define RC_OK 0
@@ -60,15 +55,14 @@ void main ( void )
     // TimerA0 setup for RTC
     TACTL = TASSEL_1 | MC_1;                    // ACLK, upmode
     TACCR0 = 32768-1;
-    TACCTL0 |= CCIE;                          // enable TA0CCRO interrupt
+    TACCTL0 |= CCIE;                            // enable TA0CCRO interrupt
 
     // TimerA1 setup for speaker PWM
     TA1CCTL1 = OUTMOD_4;            // TA1CCR1 toggle
     TA1CTL   = TASSEL_1 | MC_1;     // ACLK, upmode
-    TA1CCR0  = PWM_Period-1;        // TA1CCR1 PWM Period
-    TA1CCR1  = PWM_Duty;            // TA1CCR1 PWM Duty Cycle
+    TA1CCR0  = (32768 / 1200) - 1;  // TA1CCR1 toggle period, for ~600 Hz tone
     P2DIR   |= BIT2;                // P2.2 = output
-    //P2SEL   |= BIT2;               // P2.2 = PWM output controlled by TA1.1
+    //P2SEL   |= BIT2;                // P2.2 = PWM output controlled by TA1.1
 
     // UART setup for LCD
     P1SEL |= BIT2;                          // select pin function: P1.2 = TXD
