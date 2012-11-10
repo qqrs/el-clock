@@ -151,8 +151,10 @@ __interrupt void Port_1(void)
 #pragma vector=PORT2_VECTOR
 __interrupt void Port_2(void)
 {
+    // shift history left and shift in two encoder bits
     rotary_history = (rotary_history << 2)|((P2IN >> ENCODER_PINS_LSB) & 0x03);
 
+    // check history for a full CW or CCW cycle
     if ((rotary_history & 0x0F) == 0x0B) {
       rotary_count++;
     } else if ((rotary_history & 0x0F) == 0x07 ) {
