@@ -49,6 +49,7 @@ static void config_next_state();
 static void config_value_up();
 static void config_value_down();
 
+static void softpot_set_min( void );
 // =============================================================================
 
 void main ( void )
@@ -157,10 +158,10 @@ __interrupt void Port_1(void)
 {
     if (P1IFG & 0x08) {                 // Launchpad S2 pressed
         //incrementMinutes();
+        config_next_state();
         P1IFG &= ~0x08;                 // clear interrupt
     } else if (P1IFG & 0x10) {          // rotary encoder pushbutton pressed
         //incrementHours();
-        config_next_state();
         P1IFG &= ~0x10;                 // clear interrupt
     } else {
         P1IFG = 0x00;                   // should never happen
@@ -400,6 +401,7 @@ static void config_value_down( void )
             }
             break;
         case CFG_TIME_MIN:  
+            /*
             if (TI_minute == 0x00) {
                 TI_minute = 0x59;
             } else if ((TI_minute & 0x0F) == 0x00) {
@@ -409,6 +411,8 @@ static void config_value_down( void )
             } else {
                 TI_minute--;
             }
+            */
+            softpot_set_min();
             break;
         case CFG_TIME_SEC:  
             TI_second = 0x00;
@@ -418,12 +422,12 @@ static void config_value_down( void )
 }
 
 
-/*
+static void config_softpot_set_value()
+{
+}
 static void softpot_set_min( void )
 {
     uint16_t min;
-    min = (60u * softpot_value); 
-    min /= 0x3FF;
+    min = (60u * softpot_value) / 0x3FF; 
     TI_minute = (min / 10) * 0x10 + (min % 10);
 }
-*/
