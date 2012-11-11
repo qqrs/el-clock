@@ -21,6 +21,8 @@ const char *string2 = "TTA123456789B123456789C123456789D123456789";
 static uint8_t rotary_history;
 static int16_t rotary_count;
 
+static uint16_t softpot_value;
+
 // rotary encoder pins on Port 2
 #define ENCODER_PINS_MASK 0x18
 // assume MSB = LSB + 1
@@ -86,6 +88,11 @@ void main ( void )
     UCA0MCTL = UCBRS1 + UCBRS0;             // Modulation UCBRSx = 3
     UCA0CTL1 &= ~UCSWRST;                   // Initialize USCI state machine
 
+    // ADC setup for Softpot
+    ADC10CTL0 = ADC10SHT_3 + ADC10SR + ADC10ON + ADC10IE + MSC; // ADC10ON, interrupt enabled
+    ADC10CTL1 = INCH_7 | CONSEQ_2 | ADC10DIV_7;            // input A7, repeat single channel
+    ADC10AE0 |= 0x80;                         // PA.7 ADC option select
+
     // Reset rotary encoder
     rotary_history = 0x00;
     rotary_count = 0;
@@ -95,6 +102,9 @@ void main ( void )
     uart_load_tx_ch('S');
     uart_load_tx_ch('\0');
     uart_begin_tx();
+
+    // ADC start
+    ADC10CTL0 |= ENC + ADC10SC;             // Sampling and conversion start
 
     __bis_SR_register(GIE);                   // set global interrupt enable
 
@@ -183,6 +193,20 @@ __interrupt void USCI0TX_ISR(void)
     }
 }
 
+// ADC10 interrupt service routine
+#pragma vector=ADC10_VECTOR
+__interrupt void ADC10_ISR(void)
+{
+    /*
+    if (ADC10MEM < 0x1FF)
+      P1OUT &= ~0x01;                       // Clear P1.0 LED off
+    else
+      P1OUT |= 0x01;                        // Set P1.0 LED on
+    */
+    //ADC10CTL0 &= ~ ADC10IFG;
+    //__bis_SR_register_on_exit(LPM3_bits);
+    softpot_value = ADC10MEM;
+}
 
 // =============================================================================
 
@@ -260,6 +284,7 @@ static void lcd_write_time( void )
         uart_load_tx_ch('A');
     }
 
+    // rotary encoder count
     uart_load_tx_ch(' ');
     uart_load_tx_ch(' ');
     if (rotary_count < 0) {
@@ -272,6 +297,11 @@ static void lcd_write_time( void )
     uart_load_tx_ch( itoc( (cnt/10)%10 ) );
     uart_load_tx_ch( itoc( (cnt)%10 ) );
 
+    // Softpot value
+    uart_load_tx_ch(' ');
+    cnt = softpot_value >> 6;
+    uart_load_tx_ch( itoc( (cnt/10)%10 ) );
+    uart_load_tx_ch( itoc( (cnt)%10 ) );
 
     uart_load_tx_ch('\0');
     uart_begin_tx();
