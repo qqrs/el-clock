@@ -22,7 +22,6 @@ static uint8_t rotary_history;
 static int16_t rotary_count;
 
 static uint16_t softpot_value;
-static uint16_t adc_reads_per_second;
 
 // rotary encoder pins on Port 2
 #define ENCODER_PINS_MASK 0x18
@@ -107,7 +106,6 @@ void main ( void )
     uart_load_tx_ch('\0');
     uart_begin_tx();
 
-    adc_reads_per_second = 0;
     // ADC enable convesion, start conversion
     ADC10CTL0 |= ENC | ADC10SC;             // Sampling and conversion start
 
@@ -132,7 +130,6 @@ void main ( void )
 #pragma vector=TIMER0_A0_VECTOR
 __interrupt void Timer_A (void)
 {
-    adc_reads_per_second = 0;
     incrementSeconds();
     lcd_write_time();   // TODO: move this out of isr 
     __bic_SR_register_on_exit(LPM3_bits);
@@ -204,7 +201,6 @@ __interrupt void USCI0TX_ISR(void)
 __interrupt void ADC10_ISR(void)
 {
     softpot_value = ADC10MEM;
-    adc_reads_per_second++;
 }
 
 // =============================================================================
