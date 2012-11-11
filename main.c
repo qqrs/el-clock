@@ -23,11 +23,19 @@ static int16_t rotary_count;
 
 static uint16_t softpot_value;
 
-// rotary encoder pins on Port 2
-#define ENCODER_PINS_MASK 0x18
-// assume MSB = LSB + 1
-#define ENCODER_PINS_LSB 3
+#define ENCODER_PINS_MASK 0x18          // rotary encoder pins on Port 2
+#define ENCODER_PINS_LSB 3              // assume MSB = LSB + 1
 
+// config states for setting time, alarms, etc.
+typedef enum {
+    CFG_OFF = 0,        // not in config menu -- this is normal clock mode
+    CFG_TIME_HOUR,
+    CFG_TIME_MIN,
+    CFG_TIME_SEC,
+    CFG_ALM_HOUR,
+    CFG_ALM_MIN,
+} config_state_t;
+static config_state_t cfg_state;
 
 // =============================================================================
 
@@ -36,6 +44,10 @@ static int16_t uart_load_tx_str( const char *src );
 static int16_t uart_load_tx_ch( const char ch );
 
 static void lcd_write_time( void );
+
+static void config_next_state();
+static void config_value_up();
+static void config_value_down();
 
 // =============================================================================
 
@@ -96,6 +108,9 @@ void main ( void )
     ADC10CTL1 = INCH_7 | ADC10DIV_7 | ADC10SSEL_1 | CONSEQ_2;
     ADC10AE0 |= 0x80;                         // PA.7 ADC option select
 
+    // Disable time/alarm set menu
+    cfg_state = CFG_OFF;
+
     // Reset rotary encoder
     rotary_history = 0x00;
     rotary_count = 0;
@@ -136,21 +151,16 @@ __interrupt void Timer_A (void)
 }
 
 // Port 1 GPIO pushbutton interrupt
+// TODO: debounce pushbuttons
 #pragma vector=PORT1_VECTOR
 __interrupt void Port_1(void)
 {
-    //TI_minute = 0x59;
-    //TI_second = 0x58;
-
-    //if (uart_load_tx_str(string1) == RC_OK) {
-    //    uart_begin_tx();
-    //}
-  
     if (P1IFG & 0x08) {                 // Launchpad S2 pressed
-        incrementMinutes();
+        //incrementMinutes();
         P1IFG &= ~0x08;                 // clear interrupt
     } else if (P1IFG & 0x10) {          // rotary encoder pushbutton pressed
-        incrementHours();
+        //incrementHours();
+        config_next_state();
         P1IFG &= ~0x10;                 // clear interrupt
     } else {
         P1IFG = 0x00;                   // should never happen
@@ -169,9 +179,11 @@ __interrupt void Port_2(void)
 
     // check history for a full CW or CCW cycle
     if ((rotary_history & 0x0F) == 0x0B) {
-      rotary_count++;
+      //rotary_count++;
+      config_value_up();
     } else if ((rotary_history & 0x0F) == 0x07 ) {
-      rotary_count--;
+      //rotary_count--;
+      config_value_down();
     }
     
     // no way to trigger on rise+fall so flip edge select to catch next change
@@ -279,6 +291,19 @@ static void lcd_write_time( void )
         uart_load_tx_ch('A');
     }
 
+    if (cfg_state != CFG_OFF)
+    {
+        uart_load_tx_ch(' ');
+        uart_load_tx_ch('*');
+        if (cfg_state == CFG_TIME_HOUR) {
+            uart_load_tx_ch('H');
+        } else if (cfg_state == CFG_TIME_MIN) {
+            uart_load_tx_ch('M');
+        } else if (cfg_state == CFG_TIME_SEC) {
+            uart_load_tx_ch('S');
+        }
+    }
+    /*
     // rotary encoder count
     uart_load_tx_ch(' ');
     uart_load_tx_ch(' ');
@@ -291,18 +316,114 @@ static void lcd_write_time( void )
     }
     uart_load_tx_ch( itoc( (cnt/10)%10 ) );
     uart_load_tx_ch( itoc( (cnt)%10 ) );
+    */
 
+    /*
     // Softpot value
     uart_load_tx_ch(' ');
     cnt = softpot_value >> 6;
     uart_load_tx_ch( itoc( (cnt/10)%10 ) );
     uart_load_tx_ch( itoc( (cnt)%10 ) );
+    */
 
     uart_load_tx_ch('\0');
     uart_begin_tx();
 }
 
+// =============================================================================
+
+static void config_next_state( void )
+{
+    switch (cfg_state)
+    {
+        case CFG_OFF:       cfg_state = CFG_TIME_HOUR;  break;
+        case CFG_TIME_HOUR: cfg_state = CFG_TIME_MIN;   break;
+        case CFG_TIME_MIN:  cfg_state = CFG_TIME_SEC;   break;
+        case CFG_TIME_SEC:  cfg_state = CFG_OFF;        break;
+        //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
+        //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
+        default:            cfg_state = CFG_OFF;        break;
+    }
+
+    // TODO: turn off rotary encoder interrupts when config mode not active
+}
+
+static void config_value_up( void )
+{
+    switch (cfg_state)
+    {
+        //case CFG_OFF:       break;
+        //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
+        //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
+        case CFG_TIME_HOUR: 
+            if (TI_hour == 0x12) {
+                TI_hour = 0x01;
+                TI_PM ^= 1;
+            } else if (TI_hour == 0x09) {
+                TI_hour = 0x10;
+            } else {
+                TI_hour++;
+            }
+            break;
+        case CFG_TIME_MIN:  
+            if (TI_minute == 0x59) {
+                TI_minute = 0x00;
+            } else if ((TI_minute & 0x0F) == 0x09) {
+                TI_minute &= ~0x0F;
+                TI_minute += 0x10;
+            } else {
+                TI_minute++;
+            }
+            break;
+        case CFG_TIME_SEC:  
+            TI_second = 0x00;
+            break;
+        default:            cfg_state = CFG_OFF;        break;
+    }
+}
+
+static void config_value_down( void )
+{
+    switch (cfg_state)
+    {
+        //case CFG_OFF:       break;
+        //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
+        //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
+        case CFG_TIME_HOUR: 
+            if (TI_hour == 0x01) {
+                TI_hour = 0x12;
+                TI_PM ^= 1;
+            } else if (TI_hour == 0x10) {
+                TI_hour = 0x09;
+            } else {
+                TI_hour--;
+            }
+            break;
+        case CFG_TIME_MIN:  
+            if (TI_minute == 0x00) {
+                TI_minute = 0x59;
+            } else if ((TI_minute & 0x0F) == 0x00) {
+                TI_minute &= ~0x0F;
+                TI_minute += 0x09;
+                TI_minute -= 0x10;
+            } else {
+                TI_minute--;
+            }
+            break;
+        case CFG_TIME_SEC:  
+            TI_second = 0x00;
+            break;
+        default:            cfg_state = CFG_OFF;        break;
+    }
+}
 
 
-
-
+/*
+static void softpot_set_min( void )
+{
+    uint16_t min;
+    min = (60u * softpot_value); 
+    min /= 0x3FF;
+    TI_minute = (min / 10) * 0x10 + (min % 10);
+}
+*/
