@@ -138,6 +138,8 @@ void main ( void )
     P2DIR   |= BIT2;                // P2.2 = output
     //P2SEL   |= BIT2;              // P2.2 = PWM output controlled by TA1.1
 
+    P2DIR |= BIT1;                  // P2.1 = bell ringer
+
     // UART setup for LCD
     P1SEL |= BIT2;                          // select pin function: P1.2 = TXD
     P1SEL2 |= BIT2;                         // select pin function: P1.2 = TXD
@@ -544,6 +546,9 @@ static void alarm_set_def(alarm_def_t *alm, uint8_t action_flags,
 // called every minute
 static void alarm_check_alarms()
 {
+    // bell ringer timeout -- turn off after one minute
+    active_alarms_flags &= ~ALM_ACT_RINGER;
+
     for ( uint8_t i = 0; i < num_alarms; i++ )
     {
         // check whether alarm is enabled and check day/time
@@ -556,19 +561,29 @@ static void alarm_check_alarms()
 
         alarm_activate_alarm( alarms[i].action_flags );
     }
+
+    // bell ringer timeout -- turn off unless another alarm activated it
+    if ((P2OUT & BIT1) && !(active_alarms_flags & ALM_ACT_RINGER)) {
+        P2OUT &= ~BIT1;                 // turn off bell ringer
+    }
 }
 
 // activate this alarm
 static void alarm_activate_alarm(uint8_t action_flags)
 {
-       active_alarms_flags |= action_flags;
+    active_alarms_flags |= action_flags;
+
+    if ( action_flags & ALM_ACT_RINGER ) {
+        P2OUT |= BIT1;                  // turn on bell ringer
+    }
 }
 
 // deactivate all alarms
 static void alarm_deactivate_alarms( void )
 {
     active_alarms_flags = 0x00;
-    P2SEL &= ~BIT2;             // turn off PWM to speaker
+    P2SEL &= ~BIT2;                 // turn off PWM to speaker
+    P2OUT &= ~BIT1;                 // turn off bell ringer
 }
 
 
