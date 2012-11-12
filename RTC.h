@@ -60,11 +60,20 @@
 #ifndef RTC_H
 #define RTC_H
 
+#define SUNDAY    0
+#define MONDAY    1
+#define TUESDAY   2
+#define WEDNESDAY 3
+#define THURSDAY  4
+#define FRIDAY    5
+#define SATURDAY  6
+
 #define setTime(H,M,S,P) {TI_second = S; TI_minute = M; TI_hour = H; TI_PM = P;} // encoded as BCD chars
 
 extern char TI_second;      // 0x00 - 0x59
 extern char TI_minute;      // 0x00 - 0x59
 extern char TI_hour;        // 0x00 - 0x12
+extern char TI_dayOfWeek;   // 0 - 6 .. Sunday = 0
 extern char TI_PM;          // AM = 0, PM = 1
 
 extern void incrementSeconds(void);

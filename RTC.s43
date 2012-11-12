@@ -85,21 +85,25 @@
             PUBLIC    TI_minute
             PUBLIC    TI_hour
             PUBLIC    TI_PM
+            PUBLIC    TI_dayOfWeek
             ;Functions
             PUBLIC    incrementSeconds
             PUBLIC    incrementMinutes
             PUBLIC    incrementHours
+            PUBLIC    incrementDays
             PUBLIC    get24Hour
 
-            RSEG      DATA16_I
+            RSEG      DATA16_I              ; RAM - initialized variables
 TI_second   DS 1
 TI_minute   DS 1
 TI_hour     DS 1
 TI_PM       DS 1
-            RSEG      DATA16_ID
+TI_dayOfWeek        DS 1
+            RSEG      DATA16_ID             ; RAM - initializers for DATA16_I
             DC8       0x00
             DC8       0x00
             DC8       0x12
+            DC8       0x00
             DC8       0x00
 
             RSEG    CODE                    ; Code is relocatable
@@ -141,6 +145,18 @@ notSwitchPM
 return      ret                             ; return
 rollAM
             clr.b   &TI_PM                  ; clear PM, now it is AM
+            ret
+                                            ; fall down to increment days
+
+;============================================================================
+; incrementDays
+;============================================================================
+incrementDays
+            clrc
+            cmp.b   #0x06,   &TI_dayOfWeek  ; see if it is Sat, end of week
+            jl      notSat
+            mov.b   #0xFF,   &TI_dayOfWeek
+notSat      add.b   #0x01,   &TI_dayOfWeek
             ret                             ; return
 
 ;============================================================================

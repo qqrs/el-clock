@@ -29,6 +29,7 @@ static uint8_t rotary_history;
 // config states for setting time, alarms, etc.
 typedef enum {
     CFG_OFF = 0,        // not in config menu -- this is normal clock mode
+    CFG_TIME_DAY,
     CFG_TIME_HOUR,
     CFG_TIME_MIN,
     CFG_TIME_SEC,
@@ -44,6 +45,7 @@ static int16_t uart_load_tx_str( const char *src );
 static int16_t uart_load_tx_ch( const char ch );
 
 static void lcd_write_time( void );
+static char *lcd_name_for_day( char day );
 
 static void config_next_state();
 static void config_s2_pressed();
@@ -63,6 +65,7 @@ void main ( void )
     WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
 
     setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
+    TI_dayOfWeek = 0;            // initialize day of week to Sunday
 
     // TODO: set up unused pins to prevent floating inputs
     // TI datasheet recommends configuring as output (value does not matter) or
@@ -275,12 +278,23 @@ static void inline uart_begin_tx( void )
 
 static void lcd_write_time( void )
 {
-    //uint16_t cnt;
+    char *day_name;
 
+    // clear display
     uart_load_tx_ch('C');
     uart_load_tx_ch('L');
+
+    // begin text command
     uart_load_tx_ch('T');
     uart_load_tx_ch('T');
+
+    // print day of week
+    day_name = lcd_name_for_day(TI_dayOfWeek);
+    uart_load_tx_ch(day_name[0]);
+    uart_load_tx_ch(day_name[1]);
+    uart_load_tx_ch(' ');
+
+    // print time
     uart_load_tx_ch( itoc(TI_hour >> 4) );
     uart_load_tx_ch( itoc(TI_hour & 0x0F) );
     uart_load_tx_ch(':');
@@ -291,17 +305,21 @@ static void lcd_write_time( void )
     uart_load_tx_ch( itoc(TI_second & 0x0F) );
     uart_load_tx_ch(' ');
 
+    // print AM/PM
     if (TI_PM) {
         uart_load_tx_ch('P');
     } else {
         uart_load_tx_ch('A');
     }
 
+    // print config menu state for time set or alarm set
     if (cfg_state != CFG_OFF)
     {
         uart_load_tx_ch(' ');
         uart_load_tx_ch('*');
-        if (cfg_state == CFG_TIME_HOUR) {
+        if (cfg_state == CFG_TIME_DAY) {
+            uart_load_tx_ch('D');
+        } else if (cfg_state == CFG_TIME_HOUR) {
             uart_load_tx_ch('H');
         } else if (cfg_state == CFG_TIME_MIN) {
             uart_load_tx_ch('M');
@@ -309,31 +327,25 @@ static void lcd_write_time( void )
             uart_load_tx_ch('S');
         }
     }
-    /*
-    // rotary encoder count
-    uart_load_tx_ch(' ');
-    uart_load_tx_ch(' ');
-    if (rotary_count < 0) {
-        uart_load_tx_ch('-');
-        cnt = -rotary_count;
-    } else {
-        uart_load_tx_ch('+');
-        cnt = rotary_count;
-    }
-    uart_load_tx_ch( itoc( (cnt/10)%10 ) );
-    uart_load_tx_ch( itoc( (cnt)%10 ) );
-    */
-
-    /*
-    // Softpot value
-    uart_load_tx_ch(' ');
-    cnt = softpot_value >> 6;
-    uart_load_tx_ch( itoc( (cnt/10)%10 ) );
-    uart_load_tx_ch( itoc( (cnt)%10 ) );
-    */
 
     uart_load_tx_ch('\0');
     uart_begin_tx();
+}
+
+// two-character name for day of week
+static char *lcd_name_for_day( char day )
+{
+    switch (day)
+    {
+        case SUNDAY:       return "SU";
+        case MONDAY:       return "MO";
+        case TUESDAY:      return "TU";
+        case WEDNESDAY:    return "WE";
+        case THURSDAY:     return "TH";
+        case FRIDAY:       return "FR";
+        case SATURDAY:     return "SA";
+        default:           return "  ";
+    }
 }
 
 // =============================================================================
@@ -342,7 +354,8 @@ static void config_next_state( void )
 {
     switch (cfg_state)
     {
-        case CFG_OFF:       cfg_state = CFG_TIME_HOUR;  break;
+        case CFG_OFF:       cfg_state = CFG_TIME_DAY;  break;
+        case CFG_TIME_DAY:  cfg_state = CFG_TIME_HOUR;  break;
         case CFG_TIME_HOUR: cfg_state = CFG_TIME_MIN;   break;
         case CFG_TIME_MIN:  cfg_state = CFG_TIME_SEC;   break;
         case CFG_TIME_SEC:  cfg_state = CFG_OFF;        break;
@@ -369,6 +382,9 @@ static void config_rot_up( void )
         //case CFG_OFF:       break;
         //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
         //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
+        case CFG_TIME_DAY:
+            TI_dayOfWeek = (TI_dayOfWeek==SATURDAY) ? SUNDAY : TI_dayOfWeek + 1;
+            break;
         case CFG_TIME_HOUR: 
             config_hour_up( &TI_hour, &TI_PM );
             break;
@@ -389,6 +405,9 @@ static void config_rot_down( void )
         //case CFG_OFF:       break;
         //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
         //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
+        case CFG_TIME_DAY:
+            TI_dayOfWeek = (TI_dayOfWeek==SUNDAY) ? SATURDAY : TI_dayOfWeek - 1;
+            break;
         case CFG_TIME_HOUR: 
             config_hour_down( &TI_hour, &TI_PM );
             break;
