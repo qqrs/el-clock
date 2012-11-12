@@ -46,8 +46,14 @@ static int16_t uart_load_tx_ch( const char ch );
 static void lcd_write_time( void );
 
 static void config_next_state();
-static void config_value_up();
-static void config_value_down();
+static void config_s2_pressed();
+static void config_rot_up();
+static void config_rot_down();
+static void config_rot_press();
+static void config_hour_up( char *hour, char* pm );
+static void config_hour_down( char *hour, char* pm );
+static void config_minute_up( char *min );
+static void config_minute_down( char *min );
 
 //static void softpot_set_min( void );
 // =============================================================================
@@ -157,11 +163,10 @@ __interrupt void Timer_A (void)
 __interrupt void Port_1(void)
 {
     if (P1IFG & 0x08) {                 // Launchpad S2 pressed
-        //incrementMinutes();
-        config_next_state();
+        config_s2_pressed();
         P1IFG &= ~0x08;                 // clear interrupt
     } else if (P1IFG & 0x10) {          // rotary encoder pushbutton pressed
-        //incrementHours();
+        config_rot_press();
         P1IFG &= ~0x10;                 // clear interrupt
     } else {
         P1IFG = 0x00;                   // should never happen
@@ -181,10 +186,10 @@ __interrupt void Port_2(void)
     // check history for a full CW or CCW cycle
     if ((rotary_history & 0x0F) == 0x0B) {
       //rotary_count++;
-      config_value_up();
+      config_rot_up();
     } else if ((rotary_history & 0x0F) == 0x07 ) {
       //rotary_count--;
-      config_value_down();
+      config_rot_down();
     }
     
     // no way to trigger on rise+fall so flip edge select to catch next change
@@ -346,10 +351,18 @@ static void config_next_state( void )
         default:            cfg_state = CFG_OFF;        break;
     }
 
+    lcd_write_time();
     // TODO: turn off rotary encoder interrupts when config mode not active
 }
 
-static void config_value_up( void )
+// handle s2 pushbutton press
+static void config_s2_pressed( void )
+{
+    config_next_state();
+}
+
+// handle rotary encoder turned clockwise
+static void config_rot_up( void )
 {
     switch (cfg_state)
     {
@@ -357,63 +370,106 @@ static void config_value_up( void )
         //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
         //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
         case CFG_TIME_HOUR: 
-            if (TI_hour == 0x12) {
-                TI_hour = 0x01;
-                TI_PM ^= 1;
-            } else if (TI_hour == 0x09) {
-                TI_hour = 0x10;
-            } else {
-                TI_hour++;
-            }
+            config_hour_up( &TI_hour, &TI_PM );
             break;
         case CFG_TIME_MIN:  
-            if (TI_minute == 0x59) {
-                TI_minute = 0x00;
-            } else if ((TI_minute & 0x0F) == 0x09) {
-                TI_minute &= ~0x0F;
-                TI_minute += 0x10;
-            } else {
-                TI_minute++;
-            }
+            config_minute_up( &TI_minute );
             break;
+        default:            
+           return;      // return -- don't update lcd
+    }
+    lcd_write_time();
+}
+
+// handle rotary encoder turned counter-clockwise
+static void config_rot_down( void )
+{
+    switch (cfg_state)
+    {
+        //case CFG_OFF:       break;
+        //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
+        //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
+        case CFG_TIME_HOUR: 
+            config_hour_down( &TI_hour, &TI_PM );
+            break;
+        case CFG_TIME_MIN:  
+            config_minute_down( &TI_minute );
+            break;
+        default:            
+            return;     // return -- don't update lcd
+    }
+    lcd_write_time();
+}
+
+
+// handle rotary encoder button press
+static void config_rot_press( void )
+{
+    switch (cfg_state)
+    {
+        //case CFG_OFF:       break;
+        //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
+        //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
         case CFG_TIME_SEC:  
             TI_second = 0x00;
             break;
-        default:            cfg_state = CFG_OFF;        break;
+        default:            
+            return;     // return -- don't update lcd
+    }
+    lcd_write_time();
+}
+
+// increment BCD-coded hour, flip AM/PM if needed
+static void config_hour_up( char *hour, char* pm )
+{
+    if (*hour == 0x12) {
+        *hour = 0x01;
+        *pm ^= 1;
+    } else if (*hour == 0x09) {
+        *hour = 0x10;
+    } else {
+        (*hour)++;
     }
 }
 
-static void config_value_down( void )
+// decrement BCD-coded hour, flip AM/PM if needed
+static void config_hour_down( char *hour, char* pm )
 {
-    switch (cfg_state)
-    {
-        //case CFG_OFF:       break;
-        //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
-        //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
-        case CFG_TIME_HOUR: 
-            if (TI_hour == 0x01) {
-                TI_hour = 0x12;
-                TI_PM ^= 1;
-            } else if (TI_hour == 0x10) {
-                TI_hour = 0x09;
-            } else {
-                TI_hour--;
-            }
-            break;
-        case CFG_TIME_MIN:  
-            if (TI_minute == 0x00) {
-                TI_minute = 0x59;
-            } else if ((TI_minute & 0x0F) == 0x00) {
-                TI_minute &= ~0x0F;
-                TI_minute += 0x09;
-                TI_minute -= 0x10;
-            } else {
-                TI_minute--;
-            }
-            break;
-        case CFG_TIME_SEC:  
-            TI_second = 0x00;
-            break;
-        default:            cfg_state = CFG_OFF;        break;
+    if (*hour == 0x01) {
+        *hour = 0x12;
+        *pm ^= 1;
+    } else if (*hour == 0x10) {
+        *hour = 0x09;
+    } else {
+        (*hour)--;
     }
 }
+
+// increment BCD-coded minute
+static void config_minute_up( char *min )
+{
+    if (*min == 0x59) {
+        *min = 0x00;
+    } else if (((*min) & 0x0F) == 0x09) {
+        *min &= ~0x0F;
+        *min += 0x10;
+    } else {
+        (*min)++;
+    }
+}
+
+// decrement BCD-coded minute
+static void config_minute_down( char *min )
+{
+    if (*min == 0x00) {
+        *min = 0x59;
+    } else if (((*min) & 0x0F) == 0x00) {
+        *min &= ~0x0F;
+        *min += 0x09;
+        *min -= 0x10;
+    } else {
+        (*min)--;
+    }
+}
+
+
