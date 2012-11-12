@@ -19,9 +19,9 @@ const char *string2 = "TTA123456789B123456789C123456789D123456789";
 #define RC_OK 0
 
 static uint8_t rotary_history;
-static int16_t rotary_count;
+//static int16_t rotary_count;
 
-static uint16_t softpot_value;
+//static uint16_t softpot_value;
 
 #define ENCODER_PINS_MASK 0x18          // rotary encoder pins on Port 2
 #define ENCODER_PINS_LSB 3              // assume MSB = LSB + 1
@@ -49,7 +49,7 @@ static void config_next_state();
 static void config_value_up();
 static void config_value_down();
 
-static void softpot_set_min( void );
+//static void softpot_set_min( void );
 // =============================================================================
 
 void main ( void )
@@ -104,17 +104,17 @@ void main ( void )
     // 10-bit ADC setup for Softpot
     // implicit: SREF = VCC/VSS
     // sample-and-hold 64xADCCLK, ADC on, ISR enable, multiple sample repeat
-    ADC10CTL0 = ADC10SHT_3 | ADC10ON | ADC10IE | MSC;
+    //ADC10CTL0 = ADC10SHT_3 | ADC10ON | ADC10IE | MSC;
     // input channel A7, clk div /8, ADCCLK source ACLK, repeat-single-channel
-    ADC10CTL1 = INCH_7 | ADC10DIV_7 | ADC10SSEL_1 | CONSEQ_2;
-    ADC10AE0 |= 0x80;                         // PA.7 ADC option select
+    //ADC10CTL1 = INCH_7 | ADC10DIV_7 | ADC10SSEL_1 | CONSEQ_2;
+    //ADC10AE0 |= 0x80;                         // PA.7 ADC option select
 
     // Disable time/alarm set menu
     cfg_state = CFG_OFF;
 
     // Reset rotary encoder
     rotary_history = 0x00;
-    rotary_count = 0;
+    //rotary_count = 0;
 
     // Disable LCD cursor
     uart_load_tx_ch('C');
@@ -123,7 +123,7 @@ void main ( void )
     uart_begin_tx();
 
     // ADC enable convesion, start conversion
-    ADC10CTL0 |= ENC | ADC10SC;             // Sampling and conversion start
+    //ADC10CTL0 |= ENC | ADC10SC;             // Sampling and conversion start
 
     __bis_SR_register(GIE);                   // set global interrupt enable
 
@@ -210,11 +210,11 @@ __interrupt void USCI0TX_ISR(void)
 }
 
 // ADC10 interrupt service routine
-#pragma vector=ADC10_VECTOR
-__interrupt void ADC10_ISR(void)
-{
-    softpot_value = ADC10MEM;
-}
+//#pragma vector=ADC10_VECTOR
+//__interrupt void ADC10_ISR(void)
+//{
+    //softpot_value = ADC10MEM;
+//}
 
 // =============================================================================
 
@@ -270,7 +270,7 @@ static void inline uart_begin_tx( void )
 
 static void lcd_write_time( void )
 {
-    uint16_t cnt;
+    //uint16_t cnt;
 
     uart_load_tx_ch('C');
     uart_load_tx_ch('L');
@@ -401,7 +401,6 @@ static void config_value_down( void )
             }
             break;
         case CFG_TIME_MIN:  
-            /*
             if (TI_minute == 0x00) {
                 TI_minute = 0x59;
             } else if ((TI_minute & 0x0F) == 0x00) {
@@ -411,23 +410,10 @@ static void config_value_down( void )
             } else {
                 TI_minute--;
             }
-            */
-            softpot_set_min();
             break;
         case CFG_TIME_SEC:  
             TI_second = 0x00;
             break;
         default:            cfg_state = CFG_OFF;        break;
     }
-}
-
-
-static void config_softpot_set_value()
-{
-}
-static void softpot_set_min( void )
-{
-    uint16_t min;
-    min = (60u * softpot_value) / 0x3FF; 
-    TI_minute = (min / 10) * 0x10 + (min % 10);
 }
