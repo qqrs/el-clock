@@ -145,7 +145,6 @@ notSwitchPM
 return      ret                             ; return
 rollAM
             clr.b   &TI_PM                  ; clear PM, now it is AM
-            ret
                                             ; fall down to increment days
 
 ;============================================================================
