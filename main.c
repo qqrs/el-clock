@@ -96,9 +96,9 @@ void main ( void )
 
     //setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
     //TI_dayOfWeek = 0;            // initialize day of week to Sunday
-    setTime( 0x07, 0x44, 0x40, 0);     
+    setTime( 0x07, 0x44, 0x55, 0);     
     TI_dayOfWeek = MONDAY;
-    alarm_set_def( &alarms[0], ALM_ACT_BEEP|ALM_ACT_RINGER, 
+    alarm_set_def( &alarms[0], ALM_ACT_BEEP|ALM_ACT_RINGER|ALM_ACT_LAMP, 
                                         DOWF_WEEKDAYS, 0x07, 0x45, 0x00 );
     alarm_reset_def( &alarms[1] );
     alarm_reset_def( &alarms[2] );
@@ -138,7 +138,7 @@ void main ( void )
     P2DIR   |= BIT2;                // P2.2 = output
     //P2SEL   |= BIT2;              // P2.2 = PWM output controlled by TA1.1
 
-    P2DIR |= BIT1;                  // P2.1 = bell ringer
+    P2DIR |= BIT0|BIT1;             // P2.0 = lamp opto, P2.1 = bell ringer
 
     // UART setup for LCD
     P1SEL |= BIT2;                          // select pin function: P1.2 = TXD
@@ -167,6 +167,10 @@ void main ( void )
     while(1)
     {
         __bis_SR_register(LPM3_bits);     // enter LPM3 and wait for interrupt
+
+        // lamp timeout -- turn off after one second
+        active_alarms_flags &= ~ALM_ACT_LAMP;
+        P2OUT &= ~BIT0;
 
         if ( TI_second == 0 ) {        // seconds just rolled over, check alarms
             alarm_check_alarms();
@@ -573,6 +577,9 @@ static void alarm_activate_alarm(uint8_t action_flags)
 {
     active_alarms_flags |= action_flags;
 
+    if ( action_flags & ALM_ACT_LAMP ) {
+        P2OUT |= BIT0;                  // turn on lamp
+    }
     if ( action_flags & ALM_ACT_RINGER ) {
         P2OUT |= BIT1;                  // turn on bell ringer
     }
@@ -583,7 +590,7 @@ static void alarm_deactivate_alarms( void )
 {
     active_alarms_flags = 0x00;
     P2SEL &= ~BIT2;                 // turn off PWM to speaker
-    P2OUT &= ~BIT1;                 // turn off bell ringer
+    P2OUT &= ~(BIT0|BIT1);          // turn off lamp and bell ringer
 }
 
 
