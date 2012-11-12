@@ -36,7 +36,31 @@ typedef enum {
     CFG_ALM_HOUR,
     CFG_ALM_MIN,
 } config_state_t;
+
 static config_state_t cfg_state;
+
+// alarm definition
+typedef struct {
+    uint8_t action_flags;
+    uint8_t day_of_week_flags;
+    char minute;
+    char hour;
+    char pm;
+} alarm_def_t;
+
+// day of week flags for alarms
+#define DOWF_WEEKDAYS ( (1<<MONDAY) | (1<<TUESDAY) | (1<<WEDNESDAY) \
+                                    | (1<<THURSDAY) | (1<<FRIDAY) )
+#define DOWF_WEEKENDS ( (1<<SUNDAY) | (1<<SATURDAY) )
+
+// action flags for alarms
+#define ALM_ACT_BEEP        0x01
+#define ALM_ACT_RINGER      0x02
+#define ALM_ACT_LAMP        0x04
+
+static alarm_def_t alarms[3];
+static uint8_t num_alarms = sizeof(alarms)/sizeof(alarm_def_t);
+static uint8_t active_alarms_flags;
 
 // =============================================================================
 
@@ -57,15 +81,28 @@ static void config_hour_down( char *hour, char* pm );
 static void config_minute_up( char *min );
 static void config_minute_down( char *min );
 
-//static void softpot_set_min( void );
+static void alarm_reset_def(alarm_def_t *alm);
+static void alarm_set_def(alarm_def_t *alm, uint8_t action_flags, 
+                            uint8_t dow_flags, char hour, char min, char pm);
+static void alarm_check_alarms();
+static void alarm_activate_alarm(uint8_t action_flags);
+static void alarm_deactivate_alarms();
+
 // =============================================================================
 
 void main ( void )
 {
     WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
 
-    setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
-    TI_dayOfWeek = 0;            // initialize day of week to Sunday
+    //setTime( 0x12, 0, 0, 0);     // initialize time to 12:00:00 AM
+    //TI_dayOfWeek = 0;            // initialize day of week to Sunday
+    setTime( 0x07, 0x44, 0x40, 0);     
+    TI_dayOfWeek = MONDAY;
+    alarm_set_def( &alarms[0], ALM_ACT_BEEP|ALM_ACT_RINGER, 
+                                        DOWF_WEEKDAYS, 0x07, 0x45, 0x00 );
+    alarm_reset_def( &alarms[1] );
+    alarm_reset_def( &alarms[2] );
+    active_alarms_flags = 0x00;
 
     // TODO: set up unused pins to prevent floating inputs
     // TI datasheet recommends configuring as output (value does not matter) or
@@ -99,7 +136,7 @@ void main ( void )
     TA1CTL   = TASSEL_1 | MC_1;     // ACLK, upmode
     TA1CCR0  = (32768 / 1200) - 1;  // TA1CCR1 toggle period, for ~600 Hz tone
     P2DIR   |= BIT2;                // P2.2 = output
-    P2SEL   |= BIT2;                // P2.2 = PWM output controlled by TA1.1
+    //P2SEL   |= BIT2;              // P2.2 = PWM output controlled by TA1.1
 
     // UART setup for LCD
     P1SEL |= BIT2;                          // select pin function: P1.2 = TXD
@@ -109,14 +146,6 @@ void main ( void )
     UCA0BR1 = 0x00;                         //
     UCA0MCTL = UCBRS1 | UCBRS0;             // Modulation UCBRSx = 3
     UCA0CTL1 &= ~UCSWRST;                   // Initialize USCI state machine
-
-    // 10-bit ADC setup for Softpot
-    // implicit: SREF = VCC/VSS
-    // sample-and-hold 64xADCCLK, ADC on, ISR enable, multiple sample repeat
-    //ADC10CTL0 = ADC10SHT_3 | ADC10ON | ADC10IE | MSC;
-    // input channel A7, clk div /8, ADCCLK source ACLK, repeat-single-channel
-    //ADC10CTL1 = INCH_7 | ADC10DIV_7 | ADC10SSEL_1 | CONSEQ_2;
-    //ADC10AE0 |= 0x80;                         // PA.7 ADC option select
 
     // Disable time/alarm set menu
     cfg_state = CFG_OFF;
@@ -131,20 +160,25 @@ void main ( void )
     uart_load_tx_ch('\0');
     uart_begin_tx();
 
-    // ADC enable convesion, start conversion
-    //ADC10CTL0 |= ENC | ADC10SC;             // Sampling and conversion start
-
     __bis_SR_register(GIE);                   // set global interrupt enable
 
     while(1)
     {
         __bis_SR_register(LPM3_bits);     // enter LPM3 and wait for interrupt
 
-        P1OUT ^= 0x01;                    // do any other needed items in loop
-        if (TI_second != 0) {
-            P1OUT ^= 0x40;
+        if ( TI_second == 0 ) {        // seconds just rolled over, check alarms
+            alarm_check_alarms();
         }
-        P2SEL ^= BIT2;               // toggle PWM for speaker beep
+
+        //P1OUT ^= 0x01;                    // do any other needed items in loop
+        //if (TI_second != 0) {
+            //P1OUT ^= 0x40;
+        //}
+
+        if ( active_alarms_flags & ALM_ACT_BEEP ) {
+            P2SEL ^= BIT2;               // toggle PWM for speaker beep
+        }
+
         //lcd_write_time();
         __no_operation();      // set breakpoint here to see 1 second interrupt
     }
@@ -216,13 +250,6 @@ __interrupt void USCI0TX_ISR(void)
         IE2 &= ~UCA0TXIE;                       // disable USCI_A0 TX interrupt
     }
 }
-
-// ADC10 interrupt service routine
-//#pragma vector=ADC10_VECTOR
-//__interrupt void ADC10_ISR(void)
-//{
-    //softpot_value = ADC10MEM;
-//}
 
 // =============================================================================
 
@@ -426,7 +453,9 @@ static void config_rot_press( void )
 {
     switch (cfg_state)
     {
-        //case CFG_OFF:       break;
+        case CFG_OFF:       
+            alarm_deactivate_alarms();      // turn off any active alarms
+            break;
         //case CFG_ALM_HOUR:  cfg_state = CFG_ALM_MIN;    break;
         //case CFG_ALM_MIN:   cfg_state = CFG_OFF;        break;
         case CFG_TIME_SEC:  
@@ -489,6 +518,57 @@ static void config_minute_down( char *min )
     } else {
         (*min)--;
     }
+}
+
+// =============================================================================
+
+static void alarm_reset_def(alarm_def_t *alm)
+{
+    alm->action_flags = 0x00;
+    alm->day_of_week_flags = 0x00;
+    alm->hour = 0x12;
+    alm->minute = 0x00;
+    alm->pm = 0x00;
+}
+
+static void alarm_set_def(alarm_def_t *alm, uint8_t action_flags, 
+                            uint8_t dow_flags, char hour, char min, char pm)
+{
+    alm->action_flags = action_flags;
+    alm->day_of_week_flags = dow_flags;
+    alm->hour = hour;
+    alm->minute = min;
+    alm->pm = pm;
+}
+
+// called every minute
+static void alarm_check_alarms()
+{
+    for ( uint8_t i = 0; i < num_alarms; i++ )
+    {
+        // check whether alarm is enabled and check day/time
+        if ( alarms[i].action_flags == 0x00
+            || !(alarms[i].day_of_week_flags & (1<<TI_dayOfWeek))
+            || alarms[i].pm != TI_PM || alarms[i].hour != TI_hour 
+            || alarms[i].minute != TI_minute ) {
+                continue;
+        }
+
+        alarm_activate_alarm( alarms[i].action_flags );
+    }
+}
+
+// activate this alarm
+static void alarm_activate_alarm(uint8_t action_flags)
+{
+       active_alarms_flags |= action_flags;
+}
+
+// deactivate all alarms
+static void alarm_deactivate_alarms( void )
+{
+    active_alarms_flags = 0x00;
+    P2SEL &= ~BIT2;             // turn off PWM to speaker
 }
 
 
