@@ -99,9 +99,9 @@ void main ( void )
     //setTime( 0x07, 0x44, 0x55, 0);     
     //TI_dayOfWeek = MONDAY;
     alarm_set_def( &alarms[0], ALM_ACT_BEEP|ALM_ACT_RINGER|ALM_ACT_LAMP, 
-                            (DOWF_WEEKDAYS & ~THURSDAY), 0x07, 0x30, 0x00 );
+                       (DOWF_WEEKDAYS & ~(1<<THURSDAY)), 0x07, 0x30, 0x00 );
     alarm_set_def( &alarms[1], ALM_ACT_BEEP|ALM_ACT_RINGER|ALM_ACT_LAMP, 
-                            THURSDAY, 0x06, 0x45, 0x00 );
+                            (1<<THURSDAY), 0x06, 0x45, 0x00 );
     alarm_reset_def( &alarms[2] );
     active_alarms_flags = 0x00;
 
